@@ -38,10 +38,9 @@ Servo Clapeta_camera_1,Clapeta_camera_2, Clapeta_camera_3; // Obiecte pentru cla
 
 bool room_heating_state[] = {false, false, false}; // Starea încălzirii pentru fiecare cameră
 bool room_humi_state[] = {false, false, false}; // Starea umidificării pentru fiecare cameră
-float default_temp_set[] = {20.0, 20.0, 20.0}; // Temperatura setată pentru fiecare cameră
-int default_rh_set[] = {50, 50, 50}; // Umiditatea setată pentru fiecare cameră
+float actual_temp_set[] = {20.0, 20.0, 20.0}; // Temperatura setată pentru fiecare cameră
+int actual_rh_set[] = {50, 50, 50}; // Umiditatea setată pentru fiecare cameră
 int default_clapeta_state[] = {CLAPETA_CAMERA_1_CLOSED, CLAPETA_CAMERA_2_CLOSED, CLAPETA_CAMERA_3_CLOSED}; // Starea clapetei pentru fiecare cameră
-
 
 void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
     switch (numarul_camerei) {
