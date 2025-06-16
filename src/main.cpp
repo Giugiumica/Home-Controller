@@ -21,26 +21,19 @@ Servo Clapeta_camera_1,Clapeta_camera_2, Clapeta_camera_3; // Obiecte pentru cla
 #define CLAPETE_INCHISE 255
 #define CLAPETE_DESCHISE 100
 // Definire pini pentru Camera 1
-#define CAMERA1_SCL_PIN 26
-#define CAMERA1_SDA_PIN 27
+
 #define CAMERA1_CLAPETA 32
 #define CAMERA1_HEATER 33
 #define CAMERA1_ATOMIZOR 25
 // Definire pini pentru Camera 2
-#define CAMERA2_SCL_PIN 22
-#define CAMERA2_SDA_PIN 21
 #define CAMERA2_CLAPETA 14
 #define CAMERA2_HEATER 13
 #define CAMERA2_ATOMIZOR 23
 // Definire pini pentru Camera 3
-#define CAMERA3_SCL_PIN 16
-#define CAMERA3_SDA_PIN 4
 #define CAMERA3_CLAPETA 19
 #define CAMERA3_HEATER 18
 #define CAMERA3_ATOMIZOR 17
 // Definire pini pentru Camera Tehnică
-#define CAM_TEHNICA_SCL_PIN 2
-#define CAM_TEHNICA_SDA_PIN 15
 #define VENTILATOR_PIN 5
 
 bool room_heating_state[] = {false, false, false}; // Starea încălzirii pentru fiecare cameră
