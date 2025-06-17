@@ -1,6 +1,8 @@
 #include <Wire.h>
 #include <Adafruit_AHTX0.h>
 #include <ESP32Servo.h>
+#include <WiFi.h>
+#include <esp_now.h>
 
 Servo Clapeta_camera_1,Clapeta_camera_2, Clapeta_camera_3; // Obiecte pentru clapetele camerelor
 
@@ -20,8 +22,8 @@ Servo Clapeta_camera_1,Clapeta_camera_2, Clapeta_camera_3; // Obiecte pentru cla
 #define CLAPETA_CAMERA_3_OPEN 95 // Grade la care clapeta este deschisă
 #define CLAPETE_INCHISE 255
 #define CLAPETE_DESCHISE 100
-// Definire pini pentru Camera 1
 
+// Definire pini pentru Camera 1
 #define CAMERA1_CLAPETA 32
 #define CAMERA1_HEATER 33
 #define CAMERA1_ATOMIZOR 25
@@ -36,11 +38,44 @@ Servo Clapeta_camera_1,Clapeta_camera_2, Clapeta_camera_3; // Obiecte pentru cla
 // Definire pini pentru Camera Tehnică
 #define VENTILATOR_PIN 5
 
+
 bool room_heating_state[] = {false, false, false}; // Starea încălzirii pentru fiecare cameră
 bool room_humi_state[] = {false, false, false}; // Starea umidificării pentru fiecare cameră
 float actual_temp_set[] = {20.0, 20.0, 20.0}; // Temperatura setată pentru fiecare cameră
 int actual_rh_set[] = {50, 50, 50}; // Umiditatea setată pentru fiecare cameră
 int default_clapeta_state[] = {CLAPETA_CAMERA_1_CLOSED, CLAPETA_CAMERA_2_CLOSED, CLAPETA_CAMERA_3_CLOSED}; // Starea clapetei pentru fiecare cameră
+char message_length[16];
+uint8_t temp_actual[4]; // Temperatura actuală pentru fiecare cameră
+uint8_t humi_actual[4]; // Umiditatea actuală pentru fiecare cameră
+
+//adresa mac a acestui esp 14:33:5C:02:88:20
+//adresa mac a esp ului pentru UI D4:8A:FC:A4:89:90
+uint8_t receiverMac[] = {0xD4, 0x8A, 0xFC, 0xA4, 0x89, 0x90}; // Adresa MAC a receptorului
+
+void trimite_mesaj_la_ecran(uint8_t cameraNR){
+    int n = snprintf(message_length, sizeof(message_length),"cam%u-%.1f-%u",cameraNR,actual_temp_set[cameraNR - 1],actual_rh_set[cameraNR - 1]);
+    esp_err_t err = esp_now_send(receiverMac, reinterpret_cast<const uint8_t*>(message_length),n);
+    if (err != ESP_OK) Serial.printf("❌ Eroare ESP-NOW (%d)\n", err);
+}
+
+void get_temp_humi(uint8_t cameraNR, float &temp, uint8_t &humi) {
+    switch (cameraNR) {
+        case 1:
+            break;
+
+        case 2:
+            break;
+
+        case 3:
+            break;
+
+        case 4:
+            break;
+
+        default:
+            Serial.println("Numărul camerei nu este valid.");
+    }
+}
 
 void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
     switch (numarul_camerei) {
@@ -97,7 +132,7 @@ void setare_viteza_ventilator(uint8_t dutyCycle) {
 }
 
 void setup() { 
-    Serial.begin((96000));
+    Serial.begin(115200);
     Clapeta_camera_1.attach(CAMERA1_CLAPETA);
     Clapeta_camera_2.attach(CAMERA2_CLAPETA);
     Clapeta_camera_3.attach(CAMERA3_CLAPETA);
