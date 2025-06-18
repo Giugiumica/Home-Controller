@@ -6,6 +6,11 @@
 
 Servo Clapeta_camera_1,Clapeta_camera_2, Clapeta_camera_3; // Obiecte pentru clapetele camerelor
 
+constexpr uint8_t TCA_ADDR   = 0x70;   // adresa multiplexorului
+constexpr uint8_t NUM_NODES  = 4;
+
+Adafruit_AHTX0 aht[NUM_NODES];
+
 #define HEAT_PWM_FREQ 10 // Frecvența de citire a senzorilor în milisecunde
 #define HUMI_PWM_FREQ 10 // Rezoluția PWM pentru controlul încălzirii
 
@@ -47,10 +52,18 @@ int default_clapeta_state[] = {CLAPETA_CAMERA_1_CLOSED, CLAPETA_CAMERA_2_CLOSED,
 char message_length[16];
 uint8_t temp_actual[4]; // Temperatura actuală pentru fiecare cameră
 uint8_t humi_actual[4]; // Umiditatea actuală pentru fiecare cameră
+bool aht_is_present[NUM_NODES] = {false, false, false, false};
 
 //adresa mac a acestui esp 14:33:5C:02:88:20
 //adresa mac a esp ului pentru UI D4:8A:FC:A4:89:90
 uint8_t receiverMac[] = {0xD4, 0x8A, 0xFC, 0xA4, 0x89, 0x90}; // Adresa MAC a receptorului
+
+void tcaSelect(uint8_t ch){
+  if (ch > 7) return;
+  Wire.beginTransmission(TCA_ADDR);
+  Wire.write(1 << ch);                 // activează exact canalul „ch”
+  Wire.endTransmission();
+}
 
 void trimite_mesaj_la_ecran(uint8_t cameraNR){
     int n = snprintf(message_length, sizeof(message_length),"cam%u-%.1f-%u",cameraNR,actual_temp_set[cameraNR - 1],actual_rh_set[cameraNR - 1]);
@@ -58,6 +71,7 @@ void trimite_mesaj_la_ecran(uint8_t cameraNR){
     if (err != ESP_OK) Serial.printf("❌ Eroare ESP-NOW (%d)\n", err);
 }
 
+/*
 void get_temp_humi(uint8_t cameraNR, float &temp, uint8_t &humi) {
     switch (cameraNR) {
         case 1:
@@ -76,6 +90,7 @@ void get_temp_humi(uint8_t cameraNR, float &temp, uint8_t &humi) {
             Serial.println("Numărul camerei nu este valid.");
     }
 }
+*/
 
 void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
     switch (numarul_camerei) {
@@ -131,12 +146,77 @@ void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
 void setare_viteza_ventilator(uint8_t dutyCycle) {
 }
 
-void setup() { 
+void get_temp_humi(uint8_t cameraNR, float &temp, uint8_t &humi) {
+  if (cameraNR < 1 || cameraNR > NUM_NODES) {
+    Serial.println("❌ Numărul camerei nu este valid.");
+    return;
+  }
+
+  uint8_t index = cameraNR - 1; // indexul în array-ul de senzori
+  tcaSelect(cameraNR); // canalul TCA corespunde direct numărului camerei
+
+  sensors_event_t hum_event, temp_event;
+  if (aht[index].getEvent(&hum_event, &temp_event)) {
+    temp = temp_event.temperature;
+    humi = (uint8_t)(hum_event.relative_humidity + 0.5); // rotunjire simplă
+
+    Serial.printf("✅ Camera %u: %.1f °C, %u %% RH\n", cameraNR, temp, humi);
+  } else {
+    Serial.printf("⚠️  Eroare la citirea senzorului pentru camera %u\n", cameraNR);
+    temp = -100.0;
+    humi = 0;
+  }
+}
+
+void scanChannel(uint8_t ch) {
+  tcaSelect(ch);
+  delay(100);
+  Serial.printf("📡 Scan pe canalul %u: ", ch);
+  for (byte addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("0x%02X ", addr);
+    }
+  }
+  //Serial.println();
+}
+
+void handle_temp(){
+    for (uint8_t ch = 0; ch < NUM_NODES; ch++){
+        if (!aht_is_present[ch])continue;
+        tcaSelect(ch + 1);
+        sensors_event_t hum, temp;
+        if (aht[ch].getEvent(&hum, &temp)){
+            Serial.printf("cam%u  |  AHT20 %.1f°C %.0f%%  \n", ch + 1, temp.temperature, hum.relative_humidity);
+        }
+        else{
+            Serial.printf("cam%u  |  Eroare la citire senzor\n", ch + 1);
+        }
+    }
+    Serial.println("-----------------------------");
+}
+
+void setup() {
     Serial.begin(115200);
     Clapeta_camera_1.attach(CAMERA1_CLAPETA);
     Clapeta_camera_2.attach(CAMERA2_CLAPETA);
     Clapeta_camera_3.attach(CAMERA3_CLAPETA);
+    Wire.begin(22, 23); // SDA, SCL
+    Serial.begin(115200);
+    for (uint8_t ch = 0; ch < NUM_NODES; ch++){
+        tcaSelect(ch + 1);
+        if (aht[ch].begin()){
+            aht_is_present[ch] = true;
+            Serial.printf("cam%u  AHT20 OK\n", ch + 1);
+        }
+        else{
+            Serial.printf("cam%u  AHT20 missing ❌\n", ch + 1);
+        }
+    }
 }
 
 void loop() {
+    handle_temp();
+    delay(5000);
 }
