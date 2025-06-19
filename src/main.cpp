@@ -73,6 +73,24 @@ char message_length[20];
 char ultimul_mesaj[20] = "";
 bool mesaj_nou = false;
 
+struct CameraData_reg {
+  float temperatura;
+  float temperatura_setata;
+  float temperatura_eroare_anterioara;
+  float temperatura_integrala;
+
+  uint8_t umiditate;
+  uint8_t umiditate_setata;
+  float umiditate_eroare_anterioara;
+  float umiditate_integrala;
+
+  bool incalzire_activ;
+  bool umidificare_activ;
+};
+
+CameraData camere_reg[NR_CAMERE];
+
+
 void tcaSelect(uint8_t ch){
   if (ch > 7) return;
   Wire.beginTransmission(TCA_ADDR);
@@ -239,6 +257,56 @@ void setare_viteza_ventilator(uint8_t dutyCycleProcent) {
   ledcWrite(pwmChannel, dutyPWM);
 }
 
+void control_PID_camera(uint8_t camIndex, float dt_sec) {
+  if (camIndex >= NR_CAMERE) return;
+
+  CameraData &cam = camere[camIndex];
+
+  //–––––––––– TEMP ––––––––––
+  float e_temp = cam.temperatura_setata - cam.temperatura;
+  if (fabs(e_temp) < TEMP_TOLERANTA) e_temp = 0;
+
+  cam.temperatura_integrala += e_temp * dt_sec;
+  float deriv_temp = (e_temp - cam.temperatura_eroare_anterioara) / dt_sec;
+
+  float output_temp = Kp_temp * e_temp +
+                      Ki_temp * cam.temperatura_integrala +
+                      Kd_temp * deriv_temp;
+
+  cam.temperatura_eroare_anterioara = e_temp;
+
+  // Limitare output (0–100%)
+  output_temp = constrain(output_temp, 0, 100);
+
+  // Aplicare
+  if (cam.incalzire_activ) {
+    setare_incalzitor(camIndex + 1, output_temp);  // camerele sunt 1-based în funcția ta
+  } else {
+    setare_incalzitor(camIndex + 1, 0);
+  }
+
+  //–––––––––– UMIDITATE ––––––––––
+  float e_umid = (float)cam.umiditate_setata - cam.umiditate;
+  if (fabs(e_umid) < UMID_TOLERANTA) e_umid = 0;
+
+  cam.umiditate_integrala += e_umid * dt_sec;
+  float deriv_umid = (e_umid - cam.umiditate_eroare_anterioara) / dt_sec;
+
+  float output_umid = Kp_umid * e_umid +
+                      Ki_umid * cam.umiditate_integrala +
+                      Kd_umid * deriv_umid;
+
+  cam.umiditate_eroare_anterioara = e_umid;
+
+  output_umid = constrain(output_umid, 0, 100);
+
+  if (cam.umidificare_activ) {
+    setare_atomizor(camIndex + 1, output_umid);
+  } else {
+    setare_atomizor(camIndex + 1, 0);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   Clapeta_camera_1.attach(CAMERA1_CLAPETA);
@@ -289,5 +357,18 @@ void loop() {
     mesaj_nou = false;
     decodare_date_primite();
     }
-    delay(1000);
+    static unsigned long lastTime = 0;
+  unsigned long now = millis();
+
+  if (now - lastTime >= REG_LOOP_INTERVAL_MS) {
+    float dt = (now - lastTime) / 1000.0;
+    lastTime = now;
+
+    // Actualizează fiecare cameră
+    for (uint8_t i = 0; i < NR_CAMERE; i++) {
+      control_PID_camera(i, dt);
+    }
+  }
+
+    delay(10);
 }
