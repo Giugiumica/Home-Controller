@@ -206,7 +206,7 @@ void setare_atomizor(uint8_t cameraNR, uint8_t procentPWM) {
   ledcWrite(ch, duty);
 }
 
-void setare_incalzitor(uint8_t cameraNR, uint8_t procentPWM) {
+void setare_heater(uint8_t cameraNR, uint8_t procentPWM) {
   static const uint8_t pwmChannel[3] = { 4, 5, 6 };
   static const uint8_t heaterPin[3]  = { CAMERA1_HEATER, CAMERA2_HEATER, CAMERA3_HEATER };
   static bool initDone[3] = { false, false, false };
