@@ -14,6 +14,15 @@ constexpr uint8_t NUM_NODES = 4;
 Adafruit_AHTX0 aht[NUM_NODES];
 bool aht_is_present[NUM_NODES] = {false, false, false, false};
 
+#define NR_CAMERE         3
+#define TEMP_TOLERANTA    1.0     // °C
+#define UMID_TOLERANTA    3.0     // %
+#define REG_LOOP_INTERVAL_MS  1000
+
+float Kp_temp = 2.0, Ki_temp = 0.3, Kd_temp = 1.0;
+float Kp_umid = 2.0, Ki_umid = 0.3, Kd_umid = 1.0;
+
+
 #define HEAT_AND_HUMI_PWM_FREQ 10 // Frecvența PWM pentru încălzire și umidificare
 #define PWM_RESOLUTION 8 // Rezoluția PWM pentru atomizoare
 
