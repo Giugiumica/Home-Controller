@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_AHTX0.h>
 #include <ESP32Servo.h>
@@ -26,19 +27,16 @@ bool aht_is_present[NUM_NODES] = {false, false, false, false};
 #define FAN_MIN_DUTY 50   // Valoarea minimă a PWM pentru ventilator
 #define FAN_STOP 0
 
-#define CLAPETA_CAMERA_1_CLOSED 85 //Grade la care clapeta este închisă
-#define CLAPETA_CAMERA_1_OPEN 0 // Grade la care clapeta este deschisă
-#define CLAPETA_CAMERA_2_CLOSED 90 // Grade la care clapeta este închisă
-#define CLAPETA_CAMERA_2_OPEN 0 // Grade la care clapeta este deschisă
-#define CLAPETA_CAMERA_3_CLOSED 0 // Grade la care clapeta este închisă
-#define CLAPETA_CAMERA_3_OPEN 95 // Grade la care clapeta este deschisă
+const int8_t clapete_inchis_camera[NR_CAMERE] = {85, 90, 0}; // Starea clapetelor pentru fiecare cameră
+const int8_t clapete_deschis_camera[NR_CAMERE] = {0, 0, 95}; // Starea clapetelor pentru fiecare cameră
 #define CLAPETE_INCHISE 255
 #define CLAPETE_DESCHISE 100
 
-//pini pentru clapete
-#define CAMERA1_CLAPETA 32 // Pinul pentru clapeta camerei 1
-#define CAMERA2_CLAPETA 33 // Pinul pentru clapeta camerei 2
-#define CAMERA3_CLAPETA 25 // Pinul pentru clapeta camerei 3
+//setari pentru clapete
+const int servoPins_servo[3] = {32, 33, 25};  // Pinii conectați la cele 3 servomotoare
+const int pwmChannels_servo[3] = {8, 9, 10};   // Canale PWM dedicate pentru fiecare servo
+const int freq_servo = 50;                    // 50Hz pentru servo
+const int resolution_servo = 16;
 //pini pentru atomizoare
 #define CAMERA1_ATOMIZOR 26 // Pinul pentru atomizorul camerei 1
 #define CAMERA2_ATOMIZOR 27 // Pinul pentru atomizorul camerei 2
@@ -139,61 +137,9 @@ for (uint8_t ch = 0; ch < NUM_NODES; ch++) {
 }
 }
 
-uint32_t pulseToDuty(uint32_t pulse_us) {
-  // duty = pulse * freq * 2^res / 1_000_000
-  return (pulse_us * PWM_FREQUENCY * (1UL << PWM_RESOLUTION)) / 1000000UL;
-}
-
-
-void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
-    switch (numarul_camerei) {
-        case 0:
-            if(unghi==CLAPETE_DESCHISE) {
-                Clapeta_camera_1.write(CLAPETA_CAMERA_1_OPEN);
-                Clapeta_camera_2.write(CLAPETA_CAMERA_2_OPEN);
-                Clapeta_camera_3.write(CLAPETA_CAMERA_3_OPEN);
-            } else if(unghi==CLAPETE_INCHISE) {
-                Clapeta_camera_1.write(CLAPETA_CAMERA_1_CLOSED);
-                Clapeta_camera_2.write(CLAPETA_CAMERA_2_CLOSED);
-                Clapeta_camera_3.write(CLAPETA_CAMERA_3_CLOSED);
-            } else {
-                Serial.println("Unghiul specificat nu este valid pentru toate camerele.");
-            }
-            break;
-        case 1:
-            if (unghi>= CLAPETA_CAMERA_1_OPEN && unghi <= CLAPETA_CAMERA_1_CLOSED) {
-                Clapeta_camera_1.write(unghi);
-            } else if (unghi< CLAPETA_CAMERA_1_OPEN) {
-                Clapeta_camera_1.write(CLAPETA_CAMERA_1_OPEN);
-            } else if (unghi > CLAPETA_CAMERA_1_CLOSED) {
-                Clapeta_camera_1.write(CLAPETA_CAMERA_1_CLOSED);
-            } else{Serial.println("Eroare necuoscuta la setarea unghiuli pentru camera 1");
-            }
-            
-            break;
-        case 2:
-            if (unghi>= CLAPETA_CAMERA_2_OPEN && unghi <= CLAPETA_CAMERA_2_CLOSED) {
-                Clapeta_camera_2.write(unghi);
-            } else if (unghi< CLAPETA_CAMERA_2_OPEN) {
-                Clapeta_camera_2.write(CLAPETA_CAMERA_2_OPEN);
-            } else if (unghi > CLAPETA_CAMERA_2_CLOSED) {
-                Clapeta_camera_2.write(CLAPETA_CAMERA_2_CLOSED);
-            } else{Serial.println("Eroare necuoscuta la setarea unghiuli pentru camera 2");
-            }
-            break;
-        case 3:
-            if (unghi>= CLAPETA_CAMERA_3_CLOSED && unghi <= CLAPETA_CAMERA_3_OPEN) {
-                Clapeta_camera_3.write(unghi);
-            } else if (unghi< CLAPETA_CAMERA_3_CLOSED) {
-                Clapeta_camera_3.write(CLAPETA_CAMERA_3_CLOSED);
-            } else if (unghi > CLAPETA_CAMERA_3_OPEN) {
-                Clapeta_camera_3.write(CLAPETA_CAMERA_3_OPEN);
-            } else{Serial.println("Eroare necuoscuta la setarea unghiuli pentru camera 3");
-            }
-            break;
-        default:
-            Serial.println("Numărul camerei nu este valid.");
-    }
+void setServoAngle(int servoIndex, int angle) {
+  int duty = map(angle, 0, 180, 1638, 8192);
+  ledcWrite(pwmChannels_servo[servoIndex], duty);
 }
 
 void setare_atomizor(uint8_t cameraNR, bool pornit_oprit) {
@@ -268,69 +214,46 @@ void handle_humi_state(){
 }
 
 void handle_clapeta_and_fan_state(){
-    uint8_t contIncalzire = 0,contUmidificare = 0,contGeneral=0;
+    uint8_t contIncalzire = 0,contUmidificare = 0;
     for (uint8_t i = 0; i < NR_CAMERE; i++) {
-        if (camere[i].incalzire_activ) {
-            contIncalzire+=1;
-            if (camere_actuale[i+1].umiditate < camere[i].umiditate_setata || camere_actuale[i+1].temperatura < camere[i].temperatura_setata) {
-                contGeneral+=1;
-            }else contGeneral=0;    
-        }else if (camere[i].umidificare_activ) {
-            contUmidificare+=1;
-        }    
+        if (camere[i].incalzire_activ || camere[i].umidificare_activ) {
+            setServoAngle(i, clapete_deschis_camera[i]);
+            if (camere_actuale[i+1].temperatura < camere[i].temperatura_setata) {
+                contIncalzire+=1;
+            }else if(camere_actuale[i+1].umiditate < camere[i].umiditate_setata) {
+                contUmidificare+=1;
+            }
+        }else{
+            setServoAngle(i, clapete_inchis_camera[i]);
+        }
+        
     }
-    if(contGeneral > 0) {
+
+    if(contIncalzire > 0 || contUmidificare > 0) {
     if (contIncalzire == 3) {
-        unghi_clapeta(0, CLAPETE_DESCHISE); // Deschide toate clapetele
         setare_viteza_ventilator(FAN_MAX_DUTY); // Setează ventilatorul la viteză maximă
     } else if (contIncalzire == 2) {
-        //codul pentru a deschide clapetele corespunzătoare
-        if(camere[0].incalzire_activ) {
-            unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
-        } else if(camere[1].incalzire_activ) {
-            unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
-        } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
         if (contUmidificare==3){
         setare_viteza_ventilator(90); // Setează ventilatorul la viteză mică
         }else setare_viteza_ventilator(80); // Setează ventilatorul la viteză mică
 
     } else if (contIncalzire == 1) {
-        //codul pentru a deschide clapeta corespunzătoare
-        if(camere[0].incalzire_activ) {
-            unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
-        } else if(camere[1].incalzire_activ) {
-            unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
-        } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
         if (contUmidificare==2){
         setare_viteza_ventilator(70); // Setează ventilatorul la viteză mică
         }else setare_viteza_ventilator(60); // Setează ventilatorul la viteză mică
-
     } else if(contIncalzire == 0 && contUmidificare == 0) {
-        unghi_clapeta(0, CLAPETE_INCHISE); // Închide toate clapetele
         setare_viteza_ventilator(FAN_STOP); // Oprește ventilatorul
     }else if (contIncalzire == 0 && contUmidificare != 0) {
         //codul pentru a deschide clapeta corespunzătoare
         if(contUmidificare == 3) {
-            unghi_clapeta(0, CLAPETE_DESCHISE); // Deschide toate clapetele
             setare_viteza_ventilator(90); // Setează ventilatorul la viteză maximă
         } else if (contUmidificare == 2) {
-            if(camere[0].umidificare_activ) {
-                unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
-            } else if(camere[1].umidificare_activ) {
-                unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
-            } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
             setare_viteza_ventilator(70); // Setează ventilatorul la viteză medie
         } else if (contUmidificare == 1) {
-            if(camere[0].umidificare_activ) {
-                unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
-            } else if(camere[1].umidificare_activ) {
-                unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
-            } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
             setare_viteza_ventilator(50); // Setează ventilatorul la viteză mică
         }
     }
 }else {
-    unghi_clapeta(0, CLAPETE_INCHISE); // Închide toate clapetele
     setare_viteza_ventilator(FAN_STOP); // Oprește ventilatorul
   }
 }
@@ -349,11 +272,18 @@ void control_sistem() {
 
 void setup() {
   Serial.begin(115200);
-  Clapeta_camera_1.attach(CAMERA1_CLAPETA);
-  Clapeta_camera_2.attach(CAMERA2_CLAPETA);
-  Clapeta_camera_3.attach(CAMERA3_CLAPETA);
+  for (int i = 0; i < 3; i++) {
+    ledcSetup(pwmChannels_servo[i], freq_servo, resolution_servo);
+    ledcAttachPin(servoPins_servo[i], pwmChannels_servo[i]);
+  }
+  setServoAngle(0, clapete_deschis_camera[0]); // Deschide clapeta pentru încălzire sau umidificare
+  setServoAngle(1, clapete_deschis_camera[1]); // Deschide clapeta pentru încălzire sau umidificare
+  setServoAngle(2, clapete_deschis_camera[2]); // Deschide clapeta pentru încălzire sau umidificare
+  delay(500); // Așteaptă 1 secundă pentru a permite servo-urilor să se miște
+  setServoAngle(0, clapete_inchis_camera[0]); // Deschide clapeta pentru încălzire sau umidificare
+  setServoAngle(1, clapete_inchis_camera[1]); // Deschide clapeta pentru încălzire sau umidificare
+  setServoAngle(2, clapete_inchis_camera[2]); // Deschide clapeta pentru încălzire sau umidificare
   setare_viteza_ventilator(FAN_STOP); // Inițializare ventilator cu PWM 0
-  unghi_clapeta(0, CLAPETE_DESCHISE); // Inițializare clapete închise
   pinMode(CAMERA1_ATOMIZOR, OUTPUT);
   pinMode(CAMERA2_ATOMIZOR, OUTPUT);
   pinMode(CAMERA3_ATOMIZOR, OUTPUT);
