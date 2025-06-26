@@ -17,11 +17,6 @@ bool aht_is_present[NUM_NODES] = {false, false, false, false};
 #define NR_CAMERE         3
 #define TEMP_TOLERANTA    1.0     // °C
 #define UMID_TOLERANTA    3.0     // %
-#define REG_LOOP_INTERVAL_MS  1000
-
-float Kp_temp = 2.0, Ki_temp = 0.3, Kd_temp = 1.0;
-float Kp_umid = 2.0, Ki_umid = 0.3, Kd_umid = 1.0;
-
 
 #define HEAT_AND_HUMI_PWM_FREQ 10 // Frecvența PWM pentru încălzire și umidificare
 #define PWM_RESOLUTION 8 // Rezoluția PWM pentru atomizoare
@@ -65,7 +60,11 @@ CameraData camere[3];
 
 struct CameraReadout {
   float temperatura;
+  float temperatura_eroare_anterioara;
+  float temperatura_integrala;
   uint8_t umiditate;
+  uint8_t umiditate_eroare_anterioara;
+  uint8_t umiditate_integrala;
 };
 CameraReadout camere_actuale[4];
 
@@ -73,23 +72,10 @@ char message_length[20];
 char ultimul_mesaj[20] = "";
 bool mesaj_nou = false;
 
-struct CameraData_reg {
-  float temperatura;
-  float temperatura_setata;
-  float temperatura_eroare_anterioara;
-  float temperatura_integrala;
-
-  uint8_t umiditate;
-  uint8_t umiditate_setata;
-  float umiditate_eroare_anterioara;
-  float umiditate_integrala;
-
-  bool incalzire_activ;
-  bool umidificare_activ;
-};
-
-CameraData camere_reg[NR_CAMERE];
-
+constexpr uint8_t CLAPETA_PINS[3]    = {32, 33, 25};
+constexpr uint8_t CLAPETA_CHANNELS[3] = {4, 5, 6};  // LEDC channels
+constexpr uint8_t PWM_RESOLUTION_clapeta     = 16;          // 2^16 = 65536
+constexpr uint32_t PWM_FREQUENCY     = 50;          // 50 Hz = 20 ms period
 
 void tcaSelect(uint8_t ch){
   if (ch > 7) return;
@@ -153,6 +139,12 @@ for (uint8_t ch = 0; ch < NUM_NODES; ch++) {
 }
 }
 
+uint32_t pulseToDuty(uint32_t pulse_us) {
+  // duty = pulse * freq * 2^res / 1_000_000
+  return (pulse_us * PWM_FREQUENCY * (1UL << PWM_RESOLUTION)) / 1000000UL;
+}
+
+
 void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
     switch (numarul_camerei) {
         case 0:
@@ -169,7 +161,7 @@ void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
             }
             break;
         case 1:
-            if (unghi> CLAPETA_CAMERA_1_OPEN && unghi < CLAPETA_CAMERA_1_CLOSED) {
+            if (unghi>= CLAPETA_CAMERA_1_OPEN && unghi <= CLAPETA_CAMERA_1_CLOSED) {
                 Clapeta_camera_1.write(unghi);
             } else if (unghi< CLAPETA_CAMERA_1_OPEN) {
                 Clapeta_camera_1.write(CLAPETA_CAMERA_1_OPEN);
@@ -180,7 +172,7 @@ void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
             
             break;
         case 2:
-            if (unghi> CLAPETA_CAMERA_2_OPEN && unghi < CLAPETA_CAMERA_2_CLOSED) {
+            if (unghi>= CLAPETA_CAMERA_2_OPEN && unghi <= CLAPETA_CAMERA_2_CLOSED) {
                 Clapeta_camera_2.write(unghi);
             } else if (unghi< CLAPETA_CAMERA_2_OPEN) {
                 Clapeta_camera_2.write(CLAPETA_CAMERA_2_OPEN);
@@ -190,7 +182,7 @@ void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
             }
             break;
         case 3:
-            if (unghi> CLAPETA_CAMERA_3_CLOSED && unghi < CLAPETA_CAMERA_3_OPEN) {
+            if (unghi>= CLAPETA_CAMERA_3_CLOSED && unghi <= CLAPETA_CAMERA_3_OPEN) {
                 Clapeta_camera_3.write(unghi);
             } else if (unghi< CLAPETA_CAMERA_3_CLOSED) {
                 Clapeta_camera_3.write(CLAPETA_CAMERA_3_CLOSED);
@@ -204,24 +196,16 @@ void unghi_clapeta(uint8_t numarul_camerei, uint8_t unghi) {
     }
 }
 
-void setare_atomizor(uint8_t cameraNR, uint8_t procentPWM) {
-  static const uint8_t pwmChannel[3] = { 1, 2, 3 };
-  static const uint8_t atomPin[3]={CAMERA1_ATOMIZOR,CAMERA2_ATOMIZOR,CAMERA3_ATOMIZOR};
-  static bool initDone[3] = { false, false, false };
-  uint8_t idx = cameraNR - 1;
-  uint8_t ch  = pwmChannel[idx];
-  uint8_t pin = atomPin[idx];
-
-  // inițializare canal PWM
-  if (!initDone[idx]) {
-    ledcSetup(ch, HEAT_AND_HUMI_PWM_FREQ, PWM_RESOLUTION);
-    ledcAttachPin(pin, ch);
-    initDone[idx] = true;
-  }
-  procentPWM = constrain(procentPWM, 0, 100);
-  uint32_t duty = map(procentPWM, 0, 100, 0, (1 << PWM_RESOLUTION) - 1);
-  // scrie PWM
-  ledcWrite(ch, duty);
+void setare_atomizor(uint8_t cameraNR, bool pornit_oprit) {
+    if (cameraNR==1){
+        digitalWrite(CAMERA1_ATOMIZOR, pornit_oprit ? HIGH : LOW);
+    } else if (cameraNR==2){
+        digitalWrite(CAMERA2_ATOMIZOR, pornit_oprit ? HIGH : LOW);
+    } else if (cameraNR==3){
+        digitalWrite(CAMERA3_ATOMIZOR, pornit_oprit ? HIGH : LOW);
+    } else {
+        Serial.println("Numărul camerei nu este valid pentru atomizor.");
+    }
 }
 
 void setare_heater(uint8_t cameraNR, uint8_t procentPWM) {
@@ -251,60 +235,116 @@ void setare_viteza_ventilator(uint8_t dutyCycleProcent) {
     ledcAttachPin(VENTILATOR_PIN, pwmChannel);
     pwm_initializat = true;
   }
-  if (dutyCycleProcent > FAN_MAX_DUTY) dutyCycleProcent = 100;
-  else if (dutyCycleProcent < FAN_MIN_DUTY) dutyCycleProcent = FAN_STOP;
   uint8_t dutyPWM = map(dutyCycleProcent, 0, 100, 0, 255);
-  ledcWrite(pwmChannel, dutyPWM);
+  ledcWrite(pwmChannel, dutyPWM); // Setează viteza ventilatorului
 }
 
-void control_PID_camera(uint8_t camIndex, float dt_sec) {
-  if (camIndex >= NR_CAMERE) return;
+void handle_heating_state(){
+    for (uint8_t i = 0; i < NR_CAMERE; i++) {
+        if (camere[i].incalzire_activ) {
+        if (camere_actuale[i+1].temperatura < camere[i].temperatura_setata- TEMP_TOLERANTA) {
+            setare_heater(i + 1, 100); // Setează încălzitorul la 100%
+        } else if (camere_actuale[i+1].temperatura > camere[i].temperatura_setata + TEMP_TOLERANTA) {
+            setare_heater(i + 1, 0); // Oprește încălzitorul
+        }
+        } else {
+        setare_heater(i + 1, 0); // Oprește încălzitorul dacă nu este activ
+        }
+    }
+}
 
-  CameraData &cam = camere[camIndex];
+void handle_humi_state(){
+    for (uint8_t i = 0; i < NR_CAMERE; i++) {
+        if (camere[i].umidificare_activ) {
+        if (camere_actuale[i+1].umiditate < camere[i].umiditate_setata - UMID_TOLERANTA) {
+            setare_atomizor(i + 1, true); // Setează atomizorul la 100%
+        } else if (camere_actuale[i+1].umiditate > camere[i].umiditate_setata + UMID_TOLERANTA) {
+            setare_atomizor(i + 1, false); // Oprește atomizorul
+        }
+        } else {
+        setare_atomizor(i + 1, false); // Oprește atomizorul dacă nu este activ
+        }
+    }
+}
 
-  //–––––––––– TEMP ––––––––––
-  float e_temp = cam.temperatura_setata - cam.temperatura;
-  if (fabs(e_temp) < TEMP_TOLERANTA) e_temp = 0;
+void handle_clapeta_and_fan_state(){
+    uint8_t contIncalzire = 0,contUmidificare = 0,contGeneral=0;
+    for (uint8_t i = 0; i < NR_CAMERE; i++) {
+        if (camere[i].incalzire_activ) {
+            contIncalzire+=1;
+            if (camere_actuale[i+1].umiditate < camere[i].umiditate_setata || camere_actuale[i+1].temperatura < camere[i].temperatura_setata) {
+                contGeneral+=1;
+            }else contGeneral=0;    
+        }else if (camere[i].umidificare_activ) {
+            contUmidificare+=1;
+        }    
+    }
+    if(contGeneral > 0) {
+    if (contIncalzire == 3) {
+        unghi_clapeta(0, CLAPETE_DESCHISE); // Deschide toate clapetele
+        setare_viteza_ventilator(FAN_MAX_DUTY); // Setează ventilatorul la viteză maximă
+    } else if (contIncalzire == 2) {
+        //codul pentru a deschide clapetele corespunzătoare
+        if(camere[0].incalzire_activ) {
+            unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
+        } else if(camere[1].incalzire_activ) {
+            unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
+        } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
+        if (contUmidificare==3){
+        setare_viteza_ventilator(90); // Setează ventilatorul la viteză mică
+        }else setare_viteza_ventilator(80); // Setează ventilatorul la viteză mică
 
-  cam.temperatura_integrala += e_temp * dt_sec;
-  float deriv_temp = (e_temp - cam.temperatura_eroare_anterioara) / dt_sec;
+    } else if (contIncalzire == 1) {
+        //codul pentru a deschide clapeta corespunzătoare
+        if(camere[0].incalzire_activ) {
+            unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
+        } else if(camere[1].incalzire_activ) {
+            unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
+        } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
+        if (contUmidificare==2){
+        setare_viteza_ventilator(70); // Setează ventilatorul la viteză mică
+        }else setare_viteza_ventilator(60); // Setează ventilatorul la viteză mică
 
-  float output_temp = Kp_temp * e_temp +
-                      Ki_temp * cam.temperatura_integrala +
-                      Kd_temp * deriv_temp;
-
-  cam.temperatura_eroare_anterioara = e_temp;
-
-  // Limitare output (0–100%)
-  output_temp = constrain(output_temp, 0, 100);
-
-  // Aplicare
-  if (cam.incalzire_activ) {
-    setare_incalzitor(camIndex + 1, output_temp);  // camerele sunt 1-based în funcția ta
-  } else {
-    setare_incalzitor(camIndex + 1, 0);
+    } else if(contIncalzire == 0 && contUmidificare == 0) {
+        unghi_clapeta(0, CLAPETE_INCHISE); // Închide toate clapetele
+        setare_viteza_ventilator(FAN_STOP); // Oprește ventilatorul
+    }else if (contIncalzire == 0 && contUmidificare != 0) {
+        //codul pentru a deschide clapeta corespunzătoare
+        if(contUmidificare == 3) {
+            unghi_clapeta(0, CLAPETE_DESCHISE); // Deschide toate clapetele
+            setare_viteza_ventilator(90); // Setează ventilatorul la viteză maximă
+        } else if (contUmidificare == 2) {
+            if(camere[0].umidificare_activ) {
+                unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
+            } else if(camere[1].umidificare_activ) {
+                unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
+            } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
+            setare_viteza_ventilator(70); // Setează ventilatorul la viteză medie
+        } else if (contUmidificare == 1) {
+            if(camere[0].umidificare_activ) {
+                unghi_clapeta(1, CLAPETA_CAMERA_1_OPEN);
+            } else if(camere[1].umidificare_activ) {
+                unghi_clapeta(2, CLAPETA_CAMERA_2_OPEN);
+            } else unghi_clapeta(3, CLAPETA_CAMERA_3_OPEN);
+            setare_viteza_ventilator(50); // Setează ventilatorul la viteză mică
+        }
+    }
+}else {
+    unghi_clapeta(0, CLAPETE_INCHISE); // Închide toate clapetele
+    setare_viteza_ventilator(FAN_STOP); // Oprește ventilatorul
   }
+}
 
-  //–––––––––– UMIDITATE ––––––––––
-  float e_umid = (float)cam.umiditate_setata - cam.umiditate;
-  if (fabs(e_umid) < UMID_TOLERANTA) e_umid = 0;
+void control_sistem() {
+    static unsigned long lastRun = 0;
+    unsigned long now = millis();
+    if (now - lastRun < 1000UL)
+        return;
+    lastRun = now;
 
-  cam.umiditate_integrala += e_umid * dt_sec;
-  float deriv_umid = (e_umid - cam.umiditate_eroare_anterioara) / dt_sec;
-
-  float output_umid = Kp_umid * e_umid +
-                      Ki_umid * cam.umiditate_integrala +
-                      Kd_umid * deriv_umid;
-
-  cam.umiditate_eroare_anterioara = e_umid;
-
-  output_umid = constrain(output_umid, 0, 100);
-
-  if (cam.umidificare_activ) {
-    setare_atomizor(camIndex + 1, output_umid);
-  } else {
-    setare_atomizor(camIndex + 1, 0);
-  }
+    handle_clapeta_and_fan_state();//done
+    handle_heating_state();
+    handle_humi_state();
 }
 
 void setup() {
@@ -313,9 +353,10 @@ void setup() {
   Clapeta_camera_2.attach(CAMERA2_CLAPETA);
   Clapeta_camera_3.attach(CAMERA3_CLAPETA);
   setare_viteza_ventilator(FAN_STOP); // Inițializare ventilator cu PWM 0
-  Clapeta_camera_1.write(CLAPETA_CAMERA_1_CLOSED);
-  Clapeta_camera_3.write(CLAPETA_CAMERA_3_CLOSED);
-  Clapeta_camera_2.write(CLAPETA_CAMERA_2_CLOSED);
+  unghi_clapeta(0, CLAPETE_DESCHISE); // Inițializare clapete închise
+  pinMode(CAMERA1_ATOMIZOR, OUTPUT);
+  pinMode(CAMERA2_ATOMIZOR, OUTPUT);
+  pinMode(CAMERA3_ATOMIZOR, OUTPUT);
   Wire.begin(22, 23); // SDA, SCL
   for (uint8_t ch = 0; ch < NUM_NODES; ch++) {
     tcaSelect(ch + 1);
@@ -353,22 +394,11 @@ void setup() {
 
 void loop() {
     handle_temp();
+
     if (mesaj_nou) {
     mesaj_nou = false;
     decodare_date_primite();
     }
-    static unsigned long lastTime = 0;
-  unsigned long now = millis();
-
-  if (now - lastTime >= REG_LOOP_INTERVAL_MS) {
-    float dt = (now - lastTime) / 1000.0;
-    lastTime = now;
-
-    // Actualizează fiecare cameră
-    for (uint8_t i = 0; i < NR_CAMERE; i++) {
-      control_PID_camera(i, dt);
-    }
-  }
-
+    control_sistem();
     delay(10);
 }
