@@ -78,14 +78,14 @@ constexpr uint32_t PWM_FREQUENCY     = 50;          // 50 Hz = 20 ms period
 void tcaSelect(uint8_t ch){
   if (ch > 7) return;
   Wire.beginTransmission(TCA_ADDR);
-  Wire.write(1 << ch);                 // activează exact canalul „ch”
+  Wire.write(1 << ch);
   Wire.endTransmission();
 }
 
 void scanChannel(uint8_t ch) {
   tcaSelect(ch);
   delay(100);
-  Serial.printf("📡 Scan pe canalul %u: ", ch);
+  Serial.printf("Scan pe canalul %u: ", ch);
   for (byte addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
 
@@ -93,7 +93,6 @@ void scanChannel(uint8_t ch) {
       Serial.printf("0x%02X ", addr);
     }
   }
-  //Serial.println();
 }
 
 void trimite_mesaj_la_ecran(uint8_t cameraNR, float temp_actual, uint8_t humi_actual) {
@@ -122,19 +121,20 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
 }
 
 void handle_temp(){
-for (uint8_t ch = 0; ch < NUM_NODES; ch++) {
-  if (!aht_is_present[ch]) continue;
-  tcaSelect(ch + 1);
-  sensors_event_t humi, temp;
-  if (aht[ch].getEvent(&humi, &temp)) {
-    camere_actuale[ch].temperatura = temp.temperature;
-    camere_actuale[ch].umiditate = humi.relative_humidity;
-    //Serial.printf("cam%u  |  AHT20 %.1f°C %.0f%%  \n", ch + 1, camere_actuale[ch].temperatura, camere_actuale[ch].umiditate);
-    trimite_mesaj_la_ecran(ch,camere_actuale[ch].temperatura,camere_actuale[ch].umiditate); // 👈 aici îl trimiți
-  } else {
-    Serial.printf("Eroare la citire senzor cam%u\n", ch + 1);
+  for (uint8_t ch = 0; ch < NUM_NODES; ch++){
+    if (!aht_is_present[ch])
+      continue;
+    tcaSelect(ch + 1);
+    sensors_event_t humi, temp;
+    if (aht[ch].getEvent(&humi, &temp)){
+      camere_actuale[ch].temperatura = temp.temperature;
+      camere_actuale[ch].umiditate = humi.relative_humidity;
+      trimite_mesaj_la_ecran(ch, camere_actuale[ch].temperatura, camere_actuale[ch].umiditate); // trimite mesaj la ecran
+    }
+    else{
+      Serial.printf("Eroare la citire senzor cam%u\n", ch + 1);
+    }
   }
-}
 }
 
 void setServoAngle(int servoIndex, int angle) {
@@ -324,7 +324,6 @@ void setup() {
 
 void loop() {
     handle_temp();
-
     if (mesaj_nou) {
     mesaj_nou = false;
     decodare_date_primite();
