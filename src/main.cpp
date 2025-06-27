@@ -276,14 +276,14 @@ void setup() {
     ledcSetup(pwmChannels_servo[i], freq_servo, resolution_servo);
     ledcAttachPin(servoPins_servo[i], pwmChannels_servo[i]);
   }
-  setServoAngle(0, clapete_deschis_camera[0]); // Deschide clapeta pentru încălzire sau umidificare
-  setServoAngle(1, clapete_deschis_camera[1]); // Deschide clapeta pentru încălzire sau umidificare
-  setServoAngle(2, clapete_deschis_camera[2]); // Deschide clapeta pentru încălzire sau umidificare
-  delay(500); // Așteaptă 1 secundă pentru a permite servo-urilor să se miște
-  setServoAngle(0, clapete_inchis_camera[0]); // Deschide clapeta pentru încălzire sau umidificare
-  setServoAngle(1, clapete_inchis_camera[1]); // Deschide clapeta pentru încălzire sau umidificare
-  setServoAngle(2, clapete_inchis_camera[2]); // Deschide clapeta pentru încălzire sau umidificare
-  setare_viteza_ventilator(FAN_STOP); // Inițializare ventilator cu PWM 0
+  setServoAngle(0, clapete_deschis_camera[0]);
+  setServoAngle(1, clapete_deschis_camera[1]);
+  setServoAngle(2, clapete_deschis_camera[2]);
+  delay(500);
+  setServoAngle(0, clapete_inchis_camera[0]);
+  setServoAngle(1, clapete_inchis_camera[1]);
+  setServoAngle(2, clapete_inchis_camera[2]);
+  setare_viteza_ventilator(FAN_STOP);
   pinMode(CAMERA1_ATOMIZOR, OUTPUT);
   pinMode(CAMERA2_ATOMIZOR, OUTPUT);
   pinMode(CAMERA3_ATOMIZOR, OUTPUT);
