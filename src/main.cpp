@@ -107,7 +107,8 @@ void decodare_date_primite() {
     bool umidificare_activ = false;
     float temp_setp = 0.0;
     uint8_t rh_setp = 0;
-    sscanf(ultimul_mesaj, "cam%hhu-%d-%d-%f-%hhu", &cam,&incalzire_activ,&umidificare_activ, &temp_setp, &rh_setp);
+    sscanf(ultimul_mesaj, "cam%hhu-%d-%d-%f-%hhu",
+       &cam,&incalzire_activ,&umidificare_activ, &temp_setp, &rh_setp);
     camere[cam-1].incalzire_activ = incalzire_activ;
     camere[cam-1].umidificare_activ = umidificare_activ;
     camere[cam-1].temperatura_setata = temp_setp;
